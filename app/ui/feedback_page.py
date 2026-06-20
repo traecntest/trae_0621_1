@@ -238,8 +238,16 @@ class FeedbackPage(QWidget):
             f"已为 {len(result)} 名学生生成反馈，每人 {self.count_spin.value()} 条。\n"
             f"请在右侧选择学生查看和微调。"
         )
-        if self.result_student_combo.count() > 0:
-            self._show_student_feedbacks(0)
+        target_index = -1
+        for i in range(self.result_student_combo.count()):
+            if self.result_student_combo.itemData(i) in result:
+                target_index = i
+                break
+        if target_index >= 0:
+            self.result_student_combo.blockSignals(True)
+            self.result_student_combo.setCurrentIndex(target_index)
+            self.result_student_combo.blockSignals(False)
+            self._show_student_feedbacks(target_index)
 
     def _on_feedback_error(self, error_msg):
         self.generate_btn.setEnabled(True)

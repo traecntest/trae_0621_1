@@ -12,6 +12,42 @@ from PySide6.QtCore import Qt
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
 plt.rcParams['axes.unicode_minus'] = False
 
+TOOLBAR_TEXT_MAP = {
+    'Home': '🏠 重置视图',
+    'Back': '⬅️ 上一视图',
+    'Forward': '➡️ 下一视图',
+    'Pan': '✋ 平移/缩放',
+    'Zoom': '🔍 区域缩放',
+    'Subplots': '📐 子图设置',
+    'Customize': '⚙️ 自定义参数',
+    'Save': '💾 保存图片',
+    'Reset original view': '重置视图',
+    'Back to previous view': '返回上一视图',
+    'Forward to next view': '前进到下一视图',
+    'Pan axes with left mouse, zoom with right': '左键平移，右键缩放',
+    'Zoom to rectangle': '框选区域缩放',
+    'Configure subplots': '配置子图参数',
+    'Edit axis, curve and image parameters': '编辑坐标轴和曲线参数',
+    'Save the figure': '保存当前图表'
+}
+
+
+class ChineseNavigationToolbar(NavigationToolbar):
+    def _init_toolbar(self):
+        super()._init_toolbar() if hasattr(super(), '_init_toolbar') else None
+        self._translate_actions()
+
+    def _translate_actions(self):
+        for action in self.actions():
+            text = action.text()
+            tooltip = action.toolTip()
+            if text in TOOLBAR_TEXT_MAP:
+                action.setText(TOOLBAR_TEXT_MAP[text])
+            for en, zh in TOOLBAR_TEXT_MAP.items():
+                if tooltip and en in tooltip:
+                    action.setToolTip(zh)
+                    break
+
 
 class ChartWidget(QWidget):
     def __init__(self, parent=None):
@@ -19,12 +55,24 @@ class ChartWidget(QWidget):
         self.figure = Figure(figsize=(6, 4), dpi=100)
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.toolbar = NavigationToolbar(self.canvas, self)
+        self.toolbar = ChineseNavigationToolbar(self.canvas, self)
+        self._apply_chinese_toolbar()
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.toolbar)
         layout.addWidget(self.canvas)
         layout.setContentsMargins(0, 0, 0, 0)
+
+    def _apply_chinese_toolbar(self):
+        for action in self.toolbar.actions():
+            text = action.text().strip()
+            if text in TOOLBAR_TEXT_MAP:
+                action.setText(TOOLBAR_TEXT_MAP[text])
+            tooltip = action.toolTip()
+            for en, zh in TOOLBAR_TEXT_MAP.items():
+                if tooltip and en in tooltip:
+                    action.setToolTip(zh)
+                    break
 
     def clear(self):
         self.figure.clear()
