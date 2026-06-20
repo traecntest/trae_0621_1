@@ -274,12 +274,13 @@ class FeedbackPage(QWidget):
         self.generate_btn.setText("🚀 批量生成反馈")
         self._update_status()
 
-        first_sid = None
+        target_index = -1
+        target_sid = None
         for i in range(self.result_student_combo.count()):
             sid = self.result_student_combo.itemData(i)
             if sid in result:
-                first_sid = sid
-                self.result_student_combo.setCurrentIndex(i)
+                target_index = i
+                target_sid = sid
                 break
 
         QMessageBox.information(
@@ -288,8 +289,11 @@ class FeedbackPage(QWidget):
             f"请在右侧下拉框选择学生查看和微调。"
         )
 
-        if first_sid is not None:
-            self._render_feedbacks(first_sid)
+        if target_sid is not None and target_index >= 0:
+            self.result_student_combo.blockSignals(True)
+            self.result_student_combo.setCurrentIndex(target_index)
+            self.result_student_combo.blockSignals(False)
+            self._render_feedbacks(target_sid)
 
     def _on_feedback_error(self, error_msg):
         self.generate_btn.setEnabled(True)

@@ -7,12 +7,12 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
 import matplotlib.pyplot as plt
 import numpy as np
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
 plt.rcParams['axes.unicode_minus'] = False
 
-ACTION_TEXT_MAP = {
+ACTION_TEXT_CN = {
     'Home': '🏠 重置视图',
     'Back': '⬅️ 上一视图',
     'Forward': '➡️ 下一视图',
@@ -23,7 +23,7 @@ ACTION_TEXT_MAP = {
     'Save': '💾 保存图片',
 }
 
-TOOL_TIP_MAP = {
+TOOL_TIP_CN = {
     'Reset original view': '重置到原始视图',
     'Back to previous view': '返回上一个视图',
     'Forward to next view': '前进到下一个视图',
@@ -34,65 +34,75 @@ TOOL_TIP_MAP = {
     'Save the figure': '将当前图表保存为图片文件',
 }
 
-STATUS_MESSAGE_MAP = {
-    'Home': '重置视图',
-    'Back': '返回上一视图',
-    'Forward': '前进到下一视图',
-    'Pan': '平移模式',
-    'Zoom': '缩放模式',
-    'Subplots': '子图设置',
-    'Customize': '参数设置',
-    'Save': '保存图片',
-}
-
-PAN_ZOOM_MESSAGES = {
+DYNAMIC_MSG_CN = {
     'pan': '✋ 平移模式：左键拖动平移，右键拖动缩放',
     'zoom rect': '🔍 缩放模式：鼠标左键框选放大区域',
-    'x': 'X轴',
-    'y': 'Y轴',
     'Left button pans': '左键拖动平移',
     'Right button zooms': '右键拖动缩放',
     'Left button zoom': '左键放大',
     'Right button zoom': '右键缩小',
+    ' x ': ' X轴 ',
+    ', x ': ', X轴 ',
+    'x/fixed': 'X轴/固定',
+    ' y ': ' Y轴 ',
+    ', y ': ', Y轴 ',
+    'y/fixed': 'Y轴/固定',
     'zoom': '缩放',
+    'home': '重置视图',
+    'back': '返回',
+    'forward': '前进',
 }
 
 
 class ChineseNavigationToolbar(NavigationToolbar2QT):
-    def _init_toolbar(self):
+    def __init__(self, canvas, parent=None, coordinates=True):
+        super().__init__(canvas, parent, coordinates)
+        self._translate_once()
+        QTimer.singleShot(10, self._translate_once)
+        QTimer.singleShot(100, self._translate_once)
+
+    def _translate_once(self):
         try:
-            super()._init_toolbar()
+            for action in self.actions():
+                en = action.text().strip()
+                if en in ACTION_TEXT_CN:
+                    action.setText(ACTION_TEXT_CN[en])
+                tip = action.toolTip()
+                for en, zh in TOOL_TIP_CN.items():
+                    if en in tip:
+                        action.setToolTip(zh)
+                        break
         except Exception:
             pass
-        self._translate_all()
-
-    def _translate_all(self):
-        for action in self.actions():
-            en_text = action.text().strip()
-            if en_text in ACTION_TEXT_MAP:
-                action.setText(ACTION_TEXT_MAP[en_text])
-            en_tip = action.toolTip()
-            for en, zh in TOOL_TIP_MAP.items():
-                if en in en_tip:
-                    action.setToolTip(zh)
-                    break
 
     def set_message(self, s):
         if not s:
-            super().set_message('')
+            try:
+                super().set_message('')
+            except Exception:
+                pass
             return
         translated = s
-        for en, zh in PAN_ZOOM_MESSAGES.items():
-            if en in translated:
-                translated = translated.replace(en, zh)
-        super().set_message(translated)
+        for en, zh in DYNAMIC_MSG_CN.items():
+            translated = translated.replace(en, zh)
+        try:
+            super().set_message(translated)
+        except Exception:
+            pass
 
     def _update_buttons_checked(self):
         try:
             super()._update_buttons_checked()
         except Exception:
             pass
-        self._translate_all()
+        self._translate_once()
+
+    def draw_idle(self):
+        try:
+            super().draw_idle()
+        except Exception:
+            pass
+        QTimer.singleShot(0, self._translate_once)
 
 
 class ChartWidget(QWidget):
