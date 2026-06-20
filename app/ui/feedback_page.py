@@ -37,8 +37,10 @@ class FeedbackPage(QWidget):
         self.class_dao = ClassDAO()
         self.student_dao = StudentDAO()
         self.service = FeedbackService()
+        self.current_class_id = None
         self.current_students = []
         self.generated_feedbacks = {}
+        self.generate_thread = None
         self._init_ui()
         self._load_classes()
 
@@ -120,8 +122,11 @@ class FeedbackPage(QWidget):
         select_row2 = QHBoxLayout()
         select_row2.addWidget(QLabel("选择学生查看反馈:"))
         self.result_student_combo = QComboBox()
-        self.result_student_combo.currentIndexChanged.connect(self._show_student_feedbacks)
+        self.result_student_combo.currentIndexChanged.connect(self._on_student_selected)
         select_row2.addWidget(self.result_student_combo, 1)
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("color: #1976D2; font-weight: bold;")
+        select_row2.addWidget(self.status_label)
         result_layout.addLayout(select_row2)
 
         self.feedback_scroll = QScrollArea()
@@ -133,13 +138,13 @@ class FeedbackPage(QWidget):
         result_layout.addWidget(self.feedback_scroll)
 
         save_row = QHBoxLayout()
-        self.save_all_btn = QPushButton("💾 保存所有反馈")
+        self.save_all_btn = QPushButton("💾 保存当前学生所有反馈")
         self.save_all_btn.setStyleSheet(
             "QPushButton { background-color: #4CAF50; color: white; font-weight: bold; "
             "border-radius: 4px; padding: 6px 20px; }"
             "QPushButton:hover { background-color: #388E3C; }"
         )
-        self.save_all_btn.clicked.connect(self._save_all_feedbacks)
+        self.save_all_btn.clicked.connect(self._save_current_student_feedbacks)
         save_row.addStretch()
         save_row.addWidget(self.save_all_btn)
         result_layout.addLayout(save_row)
@@ -151,6 +156,7 @@ class FeedbackPage(QWidget):
         main_layout.addWidget(splitter, 1)
 
     def _load_classes(self):
+        self.class_combo.blockSignals(True)
         self.class_combo.clear()
         classes = self.class_dao.get_all()
         for c in classes:
@@ -159,42 +165,65 @@ class FeedbackPage(QWidget):
             )
         if not classes:
             self.class_combo.addItem("暂无班级，请先生成测试数据", None)
+        self.class_combo.blockSignals(False)
+        if self.class_combo.count() > 0:
+            self._on_class_changed(0)
 
     def _on_class_changed(self, index):
+        if index < 0:
+            return
         class_id = self.class_combo.currentData()
+        self.current_class_id = class_id
+
         self.student_list.clear()
-        self.result_student_combo.clear()
         self.current_students = []
         self.generated_feedbacks = {}
+        self.status_label.setText("")
+
+        self.result_student_combo.blockSignals(True)
+        self.result_student_combo.clear()
+
+        if class_id is not None:
+            students = self.student_dao.get_by_class(class_id)
+            self.current_students = students
+            for s in students:
+                item = QListWidgetItem()
+                checkbox = QCheckBox(f"{s['name']}（{s.get('gender', '')}）")
+                checkbox.setChecked(True)
+                checkbox.stateChanged.connect(self._update_status)
+                item.setSizeHint(checkbox.sizeHint())
+                self.student_list.addItem(item)
+                self.student_list.setItemWidget(item, checkbox)
+                self.result_student_combo.addItem(s['name'], s['id'])
+
+        self.result_student_combo.blockSignals(False)
         self._clear_feedback_container()
 
-        if class_id is None:
-            return
+        if self.result_student_combo.count() > 0:
+            self.result_student_combo.setCurrentIndex(0)
+            self._on_student_selected(0)
 
-        students = self.student_dao.get_by_class(class_id)
-        self.current_students = students
-        for s in students:
-            item = QListWidgetItem()
-            checkbox = QCheckBox(f"{s['name']}（{s.get('gender', '')}）")
-            checkbox.setChecked(True)
-            item.setSizeHint(checkbox.sizeHint())
-            self.student_list.addItem(item)
-            self.student_list.setItemWidget(item, checkbox)
-            self.result_student_combo.addItem(s['name'], s['id'])
+        self._update_status()
 
     def _select_all_students(self):
         for i in range(self.student_list.count()):
             item = self.student_list.item(i)
             cb = self.student_list.itemWidget(item)
             if cb:
+                cb.blockSignals(True)
                 cb.setChecked(True)
+                cb.blockSignals(False)
+        self._update_status()
 
     def _unselect_all_students(self):
         for i in range(self.student_list.count()):
             item = self.student_list.item(i)
             cb = self.student_list.itemWidget(item)
             if cb:
+                cb.blockSignals(True)
                 cb.setChecked(False)
+                cb.blockSignals(False)
+        self._update_status()
 
     def _get_selected_student_ids(self):
         ids = []
@@ -202,13 +231,23 @@ class FeedbackPage(QWidget):
             item = self.student_list.item(i)
             cb = self.student_list.itemWidget(item)
             if cb and cb.isChecked():
-                student = self.current_students[i]
-                ids.append(student['id'])
+                if i < len(self.current_students):
+                    ids.append(self.current_students[i]['id'])
         return ids
 
+    def _update_status(self):
+        selected = len(self._get_selected_student_ids())
+        total = len(self.current_students)
+        generated = len(self.generated_feedbacks)
+        parts = []
+        if total > 0:
+            parts.append(f"已选 {selected}/{total} 人")
+        if generated > 0:
+            parts.append(f"已生成 {generated} 人反馈")
+        self.status_label.setText("  |  ".join(parts))
+
     def _generate_feedbacks(self):
-        class_id = self.class_combo.currentData()
-        if class_id is None:
+        if self.current_class_id is None:
             QMessageBox.warning(self, "提示", "请先选择一个班级")
             return
 
@@ -221,7 +260,7 @@ class FeedbackPage(QWidget):
         self.generate_btn.setText("⏳ 正在生成反馈...")
 
         self.generate_thread = GenerateFeedbackThread(
-            self.service, student_ids, class_id,
+            self.service, student_ids, self.current_class_id,
             self.perf_combo.currentText(),
             self.count_spin.value()
         )
@@ -233,21 +272,24 @@ class FeedbackPage(QWidget):
         self.generated_feedbacks = result
         self.generate_btn.setEnabled(True)
         self.generate_btn.setText("🚀 批量生成反馈")
+        self._update_status()
+
+        first_sid = None
+        for i in range(self.result_student_combo.count()):
+            sid = self.result_student_combo.itemData(i)
+            if sid in result:
+                first_sid = sid
+                self.result_student_combo.setCurrentIndex(i)
+                break
+
         QMessageBox.information(
             self, "成功",
             f"已为 {len(result)} 名学生生成反馈，每人 {self.count_spin.value()} 条。\n"
-            f"请在右侧选择学生查看和微调。"
+            f"请在右侧下拉框选择学生查看和微调。"
         )
-        target_index = -1
-        for i in range(self.result_student_combo.count()):
-            if self.result_student_combo.itemData(i) in result:
-                target_index = i
-                break
-        if target_index >= 0:
-            self.result_student_combo.blockSignals(True)
-            self.result_student_combo.setCurrentIndex(target_index)
-            self.result_student_combo.blockSignals(False)
-            self._show_student_feedbacks(target_index)
+
+        if first_sid is not None:
+            self._render_feedbacks(first_sid)
 
     def _on_feedback_error(self, error_msg):
         self.generate_btn.setEnabled(True)
@@ -259,41 +301,61 @@ class FeedbackPage(QWidget):
             item = self.feedback_container_layout.takeAt(0)
             w = item.widget()
             if w:
+                w.setParent(None)
                 w.deleteLater()
 
-    def _show_student_feedbacks(self, index):
-        self._clear_feedback_container()
+    def _on_student_selected(self, index):
         if index < 0:
             return
-
         student_id = self.result_student_combo.itemData(index)
+        if student_id is None:
+            return
+        self._render_feedbacks(student_id)
+
+    def _render_feedbacks(self, student_id):
+        self._clear_feedback_container()
+
         if student_id not in self.generated_feedbacks:
-            tip = QLabel("暂无生成的反馈，请先点击'批量生成反馈'按钮")
+            student_name = ""
+            for i in range(self.result_student_combo.count()):
+                if self.result_student_combo.itemData(i) == student_id:
+                    student_name = self.result_student_combo.itemText(i)
+                    break
+            tip = QLabel(
+                f"📌 学生【{student_name}】暂无生成的反馈。\n\n"
+                f"请先在左侧勾选学生，然后点击上方的 【🚀 批量生成反馈】 按钮。"
+            )
             tip.setAlignment(Qt.AlignCenter)
-            tip.setStyleSheet("color: #999; padding: 20px;")
+            tip.setStyleSheet(
+                "color: #666; padding: 30px; font-size: 13px; line-height: 1.8;"
+            )
+            tip.setWordWrap(True)
             self.feedback_container_layout.addWidget(tip)
             self.feedback_container_layout.addStretch()
             return
 
         feedbacks = self.generated_feedbacks[student_id]
+        self._feedback_editors = []
         for i, fb in enumerate(feedbacks):
             fb_group = QGroupBox(f"反馈方案 {i+1}")
             fb_layout = QVBoxLayout(fb_group)
 
             text_edit = QTextEdit(fb)
             text_edit.setPlainText(fb)
-            text_edit.setMinimumHeight(80)
+            text_edit.setMinimumHeight(90)
+            self._feedback_editors.append(text_edit)
             fb_layout.addWidget(text_edit)
 
             btn_row = QHBoxLayout()
-            save_btn = QPushButton("保存此条")
+            save_btn = QPushButton("💾 保存此条")
             save_btn.setStyleSheet(
                 "QPushButton { background-color: #009688; color: white; "
                 "padding: 4px 12px; border-radius: 3px; }"
                 "QPushButton:hover { background-color: #00796B; }"
             )
             save_btn.clicked.connect(
-                lambda checked, sid=student_id, te=text_edit: self._save_single_feedback(sid, te)
+                lambda checked=False, sid=student_id, te=text_edit:
+                    self._save_single_feedback(sid, te)
             )
             btn_row.addStretch()
             btn_row.addWidget(save_btn)
@@ -303,37 +365,42 @@ class FeedbackPage(QWidget):
         self.feedback_container_layout.addStretch()
 
     def _save_single_feedback(self, student_id, text_edit):
-        class_id = self.class_combo.currentData()
+        if self.current_class_id is None:
+            QMessageBox.warning(self, "提示", "请先选择班级")
+            return
         content = text_edit.toPlainText().strip()
         if not content:
             QMessageBox.warning(self, "提示", "反馈内容不能为空")
             return
-        self.service.save_feedback(student_id, class_id, content)
+        self.service.save_feedback(student_id, self.current_class_id, content)
         QMessageBox.information(self, "成功", "反馈已保存！")
 
-    def _save_all_feedbacks(self):
-        class_id = self.class_combo.currentData()
-        if class_id is None:
+    def _save_current_student_feedbacks(self):
+        if self.current_class_id is None:
             QMessageBox.warning(self, "提示", "请先选择班级")
             return
 
-        count = 0
-        for i in range(self.feedback_container_layout.count()):
-            item = self.feedback_container_layout.itemAt(i)
-            group = item.widget()
-            if isinstance(group, QGroupBox):
-                for j in range(group.layout().count()):
-                    sub_item = group.layout().itemAt(j)
-                    w = sub_item.widget()
-                    if isinstance(w, QTextEdit):
-                        content = w.toPlainText().strip()
-                        if content:
-                            student_id = self.result_student_combo.currentData()
-                            self.service.save_feedback(student_id, class_id, content)
-                            count += 1
-                            break
+        student_id = self.result_student_combo.currentData()
+        if student_id is None:
+            QMessageBox.warning(self, "提示", "请先选择学生")
+            return
 
-        QMessageBox.information(self, "成功", f"已保存 {count} 条反馈！")
+        if student_id not in self.generated_feedbacks:
+            QMessageBox.warning(self, "提示", "当前学生没有生成的反馈可保存")
+            return
+
+        count = 0
+        if hasattr(self, '_feedback_editors'):
+            for te in self._feedback_editors:
+                content = te.toPlainText().strip()
+                if content:
+                    self.service.save_feedback(student_id, self.current_class_id, content)
+                    count += 1
+
+        if count > 0:
+            QMessageBox.information(self, "成功", f"已为当前学生保存 {count} 条反馈！")
+        else:
+            QMessageBox.warning(self, "提示", "没有可保存的反馈内容")
 
     def refresh(self):
         self._load_classes()
